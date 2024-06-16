@@ -1,6 +1,7 @@
 #!/bin/bash
 
 THEME="$1"
+THEME2="$2"
 
 # setting up symbols
 play="󰐊"
@@ -13,7 +14,7 @@ loop="󰑖"
 shuffle="󰒝"
 back="󰁝"
 
-options="$back\n$play_pause\n$stop_\n$next\n$prev\n$loop\n$shuffle"
+options="$back\n$play_pause\n$stop_\n$prev\n$next\n$loop\n$shuffle"
 
 # first menu level loop
 while true; do
@@ -50,10 +51,14 @@ while true; do
     fi
     # second menu level loop
     while true; do
-        if [[ -n "$THEME" ]]; then
-            chosen_option="$(echo -e $options | rofi -theme "$THEME" -no-fixed-num-lines -dmenu -i "$chosen_player")"
+        if [[ -n "$THEME2" ]]; then
+            chosen_option="$(echo -e $options | rofi -theme "$THEME2" -no-fixed-num-lines -dmenu -i "$chosen_player")"
         else
-            chosen_option="$(echo -e $options | rofi -dmenu -i "$chosen_player")"
+            if [[ -n "$THEME" ]]; then
+                chosen_option="$(echo -e $options | rofi -theme "$THEME" -no-fixed-num-lines -dmenu -i "$chosen_player")"
+            else
+                chosen_option="$(echo -e $options | rofi -dmenu -i "$chosen_player")"
+            fi
         fi
 
         case $chosen_option in
