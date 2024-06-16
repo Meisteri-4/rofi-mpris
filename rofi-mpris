@@ -1,4 +1,5 @@
 #!/bin/bash
+# This code is awful but it works
 
 THEME="$1"
 THEME2="$2"
