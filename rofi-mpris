@@ -15,7 +15,8 @@ loop="󰑖"
 shuffle="󰒝"
 back="󰁝"
 
-options="$back\n$play_pause\n$stop_\n$prev\n$next\n$loop\n$shuffle"
+options="$stop_\n$prev\n$play_pause\n$next\n$loop"
+
 
 # first menu level loop
 while true; do
@@ -26,15 +27,15 @@ while true; do
     fi
     player_info="All"
     for player in $players; do
-        if [[ $(playerctl -p $player status) == "Playing" ]]; then
+        if [[ $(playerctl -p "$player" status) == "Playing" ]]; then
             status="󰝚"
         else
             status="󰝛"
         fi
-        player_info+="\n$status ${player%.*}\t$(playerctl -p $player metadata title)"
+        player_info+="\n$status ${player%.*}\t$(playerctl -p $player metadata --format '{{ artist }} - {{ title }}')"
     done
     if [[ -n "$THEME" ]]; then
-        chosen_player="$(echo -e $player_info | rofi -theme "$THEME" -no-fixed-num-lines -dmenu -p "" )"
+        chosen_player="$(echo -e $player_info | rofi -theme "$THEME" -dmenu -p "" )"
     else
         chosen_player="$(echo -e $player_info | rofi -dmenu -p "" )"
     fi
@@ -43,59 +44,58 @@ while true; do
 
     if [[ $chosen_player == "All" ]]; then
         chosen_player="-a"
+    elif [[ -z $chosen_player ]]; then
+        # chosen_player is empty if rofi gets passed ESC
+        break
     else
-        if [[ -z $chosen_player ]]; then
-            # chosen_player is empty if rofi gets passed ESC
-            break
-        fi
         chosen_player="-p $chosen_player"
     fi
     # second menu level loop
     while true; do
+        rofi_cmd="rofi -no-fixed-num-lines -selected-row 2 -dmenu -i $chosen_player"
+
         if [[ -n "$THEME2" ]]; then
-            chosen_option="$(echo -e $options | rofi -theme "$THEME2" -no-fixed-num-lines -dmenu -i "$chosen_player")"
-        else
-            if [[ -n "$THEME" ]]; then
-                chosen_option="$(echo -e $options | rofi -theme "$THEME" -no-fixed-num-lines -dmenu -i "$chosen_player")"
-            else
-                chosen_option="$(echo -e $options | rofi -dmenu -i "$chosen_player")"
-            fi
+            rofi_cmd+=" -theme $THEME2"
+        elif [[ -n "$THEME" ]]; then
+            rofi_cmd+=" -theme $THEME"
         fi
 
+        chosen_option="$(echo -e "$options" | $rofi_cmd)"
+
         case $chosen_option in
-            $back)
+            "$back")
                 break
                 ;;
-            # more ESC handling
             "")
+                # ESC handling
                 break
                 ;;
-            $play)
+            "$play")
                 player_option="play"
                 ;;
-            $pause)
+            "$pause")
                 player_option="pause"
                 ;;
-            $play_pause)
+            "$play_pause")
                 player_option="play-pause"
                 ;;
-            $stop_)
+            "$stop_")
                 player_option="stop"
                 ;;
-            $next)
+            "$next")
                 player_option="next"
                 ;;
-            $prev)
+            "$prev")
                 player_option="previous"
                 ;;
-            $loop)
-                if [[ "$(playerctl -p $chosen_player loop)" == "None" ]]; then
+            "$loop")
+                if [[ "$(playerctl -p "$chosen_player" loop)" == "None" ]]; then
                     player_option="loop Track"
                 else
                     player_option="loop None"
                 fi
                 ;;
-            $shuffle)
+            "$shuffle")
                 player_option="shuffle Toggle"
                 ;;
         esac
