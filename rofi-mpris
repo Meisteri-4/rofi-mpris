@@ -1,0 +1,92 @@
+#!/bin/bash
+
+THEME="$1"
+
+# setting up symbols
+play="󰐊"
+pause="󰏤"
+play_pause="󰐎"
+stop_="󰓛"
+next="󰒭"
+prev="󰒮"
+loop="󰑖"
+shuffle="󰒝"
+back="󰁝"
+
+options="$back\n$play_pause\n$stop_\n$next\n$prev\n$loop\n$shuffle"
+
+# first menu level loop
+while true; do
+    players="$(playerctl -l)"
+    if [[ -z $players ]]; then
+        rofi -e "No MPRIS players running."
+        exit 0
+    fi
+    player_info=""
+    for player in $players; do
+        if [[ $(playerctl -p $player status) == "Playing" ]]; then
+            status="󰝚"
+        else
+            status="󰝛"
+        fi
+        player_info+="$status ${player%.*}\t$(playerctl -p $player metadata title)\n"
+    done
+    player_info="${player_info::-2}" # removes trailing newline
+    if [[ -n "$THEME" ]]; then
+        chosen_player="$(echo -e $player_info | rofi -theme "$THEME" -no-fixed-num-lines -dmenu -p "" )"
+    else
+        chosen_player="$(echo -e $player_info | rofi -dmenu -p "" )"
+    fi
+    chosen_player="$(echo $chosen_player | cut -d ' ' -f 1)"
+    if [[ -z $chosen_player ]]; then
+        # chosen_player is empty if rofi gets passed ESC
+        break
+    fi
+    # second menu level loop
+    while true; do
+        if [[ -n "$THEME" ]]; then
+            chosen_option="$(echo -e $options | rofi -theme "$THEME" -no-fixed-num-lines -dmenu -i -p "$chosen_player")"
+        else
+            chosen_option="$(echo -e $options | rofi -dmenu -i -p "$chosen_player")"
+        fi
+
+        case $chosen_option in
+            $back)
+                break
+                ;;
+            # more ESC handling
+            "")
+                break
+                ;;
+            $play)
+                player_option="play"
+                ;;
+            $pause)
+                player_option="pause"
+                ;;
+            $play_pause)
+                player_option="play-pause"
+                ;;
+            $stop_)
+                player_option="stop"
+                ;;
+            $next)
+                player_option="next"
+                ;;
+            $prev)
+                player_option="previous"
+                ;;
+            $loop)
+                if [[ "$(playerctl -p $chosen_player loop)" == "None" ]]; then
+                    player_option="loop Track"
+                else
+                    player_option="loop None"
+                fi
+                ;;
+            $shuffle)
+                player_option="shuffle Toggle"
+                ;;
+        esac
+        playerctl -p $chosen_player $player_option
+    done
+done
