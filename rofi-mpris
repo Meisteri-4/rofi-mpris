@@ -22,32 +22,38 @@ while true; do
         rofi -e "No MPRIS players running."
         exit 0
     fi
-    player_info=""
+    player_info="All"
     for player in $players; do
         if [[ $(playerctl -p $player status) == "Playing" ]]; then
             status="󰝚"
         else
             status="󰝛"
         fi
-        player_info+="$status ${player%.*}\t$(playerctl -p $player metadata title)\n"
+        player_info+="\n$status ${player%.*}\t$(playerctl -p $player metadata title)"
     done
-    player_info="${player_info::-2}" # removes trailing newline
     if [[ -n "$THEME" ]]; then
         chosen_player="$(echo -e $player_info | rofi -theme "$THEME" -no-fixed-num-lines -dmenu -p "" )"
     else
         chosen_player="$(echo -e $player_info | rofi -dmenu -p "" )"
     fi
-    chosen_player="$(echo $chosen_player | cut -d ' ' -f 1)"
-    if [[ -z $chosen_player ]]; then
-        # chosen_player is empty if rofi gets passed ESC
-        break
+
+    chosen_player="$(echo $chosen_player | cut -d ' ' -f 2)"
+
+    if [[ $chosen_player == "All" ]]; then
+        chosen_player="-a"
+    else
+        if [[ -z $chosen_player ]]; then
+            # chosen_player is empty if rofi gets passed ESC
+            break
+        fi
+        chosen_player="-p $chosen_player"
     fi
     # second menu level loop
     while true; do
         if [[ -n "$THEME" ]]; then
-            chosen_option="$(echo -e $options | rofi -theme "$THEME" -no-fixed-num-lines -dmenu -i -p "$chosen_player")"
+            chosen_option="$(echo -e $options | rofi -theme "$THEME" -no-fixed-num-lines -dmenu -i "$chosen_player")"
         else
-            chosen_option="$(echo -e $options | rofi -dmenu -i -p "$chosen_player")"
+            chosen_option="$(echo -e $options | rofi -dmenu -i "$chosen_player")"
         fi
 
         case $chosen_option in
@@ -87,6 +93,6 @@ while true; do
                 player_option="shuffle Toggle"
                 ;;
         esac
-        playerctl -p $chosen_player $player_option
+        playerctl $chosen_player $player_option
     done
 done
