@@ -1,6 +1,7 @@
 #!/bin/bash
 # This code is awful but it works
 
+DEFAULT_THEME="$HOME/.config/rofi/config.rasi"
 THEME="$1"
 THEME2="$2"
 
@@ -15,55 +16,70 @@ loop="󰑖"
 shuffle="󰒝"
 back="󰁝"
 
+active="󰝚"
+inactive="󰝛"
+
 # setting up options shown in the second level menu. again, you are encouraged to change them
 # can include $back $play $pause $play-pause $_stop $next $prev $loop $shuffle in any order
 options="$stop_\n$prev\n$play_pause\n$next\n$loop"
 
+label_all_active="Active"
+label_all_inactive="Inactive"
 
 # first menu level loop
 while true; do
-    players="$(playerctl -l)"
-    if [[ -z $players ]]; then
+    players="$label_all_active"$'\n'"$label_all_inactive"
+    # there is no way to target all players at once with mpris-ctl
+    # so we get active and inactive players separately
+    active_players="$(mpris-ctl --player active list)"
+    inactive_players="$(mpris-ctl --player inactive list)"
+    if [[ -n $active_players ]]; then
+        players="$players"$'\n'"$active_players"
+    fi
+    if [[ -n $inactive_players ]]; then
+        players="$players"$'\n'"$inactive_players"
+    fi
+    readarray -t players <<<"$players"
+    if [[ ${#players[@]} -le 2 ]]; then
+        # if $players only has 'active' and 'inactive' there's nothing running
         rofi -e "No MPRIS players running."
         exit 0
     fi
-    player_info="All"
-    for player in $players; do
-        if [[ $(playerctl -p "$player" status) == "Playing" ]]; then
-            status="󰝚"
+    player_list_display="$label_all_active"$'\n'"$label_all_inactive"
+    for player in "${players[@]:2}"; do
+        # begin loop at index 2 to skip 'Active' and 'Inactive'
+        if [[ "$(mpris-ctl --player "$player" status)" == "Playing" ]]; then
+            status="$active"
         else
-            status="󰝛"
+            status="$inactive"
         fi
-        player_info+="\n$status ${player%.*}\t$(playerctl -p $player metadata --format '{{ artist }} - {{ title }}')"
+        player_list_display+="\n$status $(mpris-ctl --player "$player" info "%player_name\t%artist_name - %track_name")"
     done
-    if [[ -n "$THEME" ]]; then
-        chosen_player="$(echo -e $player_info | rofi -theme "$THEME" -dmenu -p "" )"
-    else
-        chosen_player="$(echo -e $player_info | rofi -dmenu -p "" )"
-    fi
+    rofi_par1=(
+        -dmenu
+        -p ""
+        -format i
+        -theme "${THEME:-$DEFAULT_THEME}"
+    )
 
-    chosen_player="$(echo $chosen_player | cut -d ' ' -f 2)"
-
-    if [[ $chosen_player == "All" ]]; then
-        chosen_player="-a"
-    elif [[ -z $chosen_player ]]; then
-        # chosen_player is empty if rofi gets passed ESC
+    player_index="$(echo -e "$player_list_display" | rofi "${rofi_par1[@]}")"
+    if [[ -z $player_index ]]; then
+        # $player_index is empty if rofi gets passed ESC
         break
-    else
-        chosen_player="-p $chosen_player"
     fi
+    chosen_player="${players[$player_index]}"
+    rofi_par2=(
+        -no-fixed-num-lines
+        -selected-row 2
+        -dmenu
+        -p "$chosen_player"
+        -theme "${THEME2:-${THEME:-$DEFAULT_THEME}}"
+    )
+    if [[ "$chosen_player" == "$label_all_active" ]]; then chosen_player="active"; fi
+    if [[ "$chosen_player" == "$label_all_inactive" ]]; then chosen_player="inactive"; fi
     # second menu level loop
     while true; do
-        rofi_cmd="rofi -no-fixed-num-lines -selected-row 2 -dmenu -i $chosen_player"
-
-        if [[ -n "$THEME2" ]]; then
-            rofi_cmd+=" -theme $THEME2"
-        elif [[ -n "$THEME" ]]; then
-            rofi_cmd+=" -theme $THEME"
-        fi
-
-        chosen_option="$(echo -e "$options" | $rofi_cmd)"
-
+        chosen_option="$(echo -e "$options" | rofi "${rofi_par2[@]}")" 
         case $chosen_option in
             "$back")
                 break
@@ -79,7 +95,7 @@ while true; do
                 player_option="pause"
                 ;;
             "$play_pause")
-                player_option="play-pause"
+                player_option="pp"
                 ;;
             "$stop_")
                 player_option="stop"
@@ -88,21 +104,15 @@ while true; do
                 player_option="next"
                 ;;
             "$prev")
-                player_option="previous"
+                player_option="prev"
                 ;;
             "$loop")
-                if [[ "$(playerctl -p "$chosen_player" loop)" == "None" ]]; then
-                    player_option="loop Track"
-                    # uncomment next line to change loop behavior to target the playlist
-                    # player_option="loop Playlist"
-                else
-                    player_option="loop None"
-                fi
+                player_option="repeat --track"
                 ;;
             "$shuffle")
-                player_option="shuffle Toggle"
+                player_option="shuffle"
                 ;;
         esac
-        playerctl $chosen_player $player_option
+        mpris-ctl --player "$chosen_player" "$player_option"
     done
 done
