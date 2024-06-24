@@ -4,7 +4,7 @@
 THEME="$1"
 THEME2="$2"
 
-# setting up symbols
+# setting up symbols used in the menu. you`re encouraged to change them
 play="󰐊"
 pause="󰏤"
 play_pause="󰐎"
@@ -15,6 +15,8 @@ loop="󰑖"
 shuffle="󰒝"
 back="󰁝"
 
+# setting up options shown in the second level menu. again, you are encouraged to change them
+# can include $back $play $pause $play-pause $_stop $next $prev $loop $shuffle in any order
 options="$stop_\n$prev\n$play_pause\n$next\n$loop"
 
 
@@ -91,6 +93,8 @@ while true; do
             "$loop")
                 if [[ "$(playerctl -p "$chosen_player" loop)" == "None" ]]; then
                     player_option="loop Track"
+                    # uncomment next line to change loop behavior to target the playlist
+                    # player_option="loop Playlist"
                 else
                     player_option="loop None"
                 fi
