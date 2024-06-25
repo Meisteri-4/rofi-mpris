@@ -25,50 +25,55 @@ options="$stop_\n$prev\n$play_pause\n$next\n$loop"
 
 label_all_active="Active"
 label_all_inactive="Inactive"
+label_all="All"
 
 # first menu level loop
 while true; do
-    players="$label_all_active"$'\n'"$label_all_inactive"
-    # there is no way to target all players at once with mpris-ctl
-    # so we get active and inactive players separately
-    active_players="$(mpris-ctl --player active list)"
-    inactive_players="$(mpris-ctl --player inactive list)"
-    if [[ -n $active_players ]]; then
-        players="$players"$'\n'"$active_players"
-    fi
-    if [[ -n $inactive_players ]]; then
-        players="$players"$'\n'"$inactive_players"
-    fi
-    readarray -t players <<<"$players"
-    if [[ ${#players[@]} -le 2 ]]; then
-        # if $players only has 'active' and 'inactive' there's nothing running
+    actual_players="$(mpris-ctl --player active --player inactive list)"
+    if [[ -z $actual_players ]]; then
         rofi -e "No MPRIS players running."
         exit 0
     fi
-    player_list_display="$label_all_active"$'\n'"$label_all_inactive"
-    for player in "${players[@]:2}"; do
-        # begin loop at index 2 to skip 'Active' and 'Inactive'
+    players=""
+    players+="$label_all"$'\n'
+    # players+="$label_all_active"$'\n'
+    # players+="$label_all_inactive"$'\n'
+    players+="$actual_players"
+    readarray -t players <<<"$players"
+    player_list_display=""
+    for player in "${players[@]}"; do
+        if [[ "$player" == "$label_all" ]]; then
+            player_list_display+="$label_all"$'\n'
+            continue
+        elif [[ "$player" == "$label_all_inactive" ]]; then
+            player_list_display+="$label_all_inactive"$'\n'
+            continue
+        elif [[ "$player" == "$label_all_active" ]]; then
+            player_list_display+="$label_all_active"$'\n'
+            continue
+        fi
         if [[ "$(mpris-ctl --player "$player" status)" == "Playing" ]]; then
             status="$active"
         else
             status="$inactive"
         fi
-        player_list_display+="\n$status $(mpris-ctl --player "$player" info "%player_name\t%artist_name - %track_name")"
+        player_list_display+="$status $(mpris-ctl --player "$player" info "%player_name\t%artist_name - %track_name")"$'\n'
     done
-    rofi_par1=(
+    player_list_display=${player_list_display%$'\n'}
+    rofi_first_param=(
         -dmenu
         -p ""
         -format i
         -theme "${THEME:-$DEFAULT_THEME}"
     )
 
-    player_index="$(echo -e "$player_list_display" | rofi "${rofi_par1[@]}")"
+    player_index="$(echo -e "$player_list_display" | rofi "${rofi_first_param[@]}")"
     if [[ -z $player_index ]]; then
         # $player_index is empty if rofi gets passed ESC
         break
     fi
     chosen_player="${players[$player_index]}"
-    rofi_par2=(
+    rofi_second_param=(
         -no-fixed-num-lines
         -selected-row 2
         -dmenu
@@ -77,9 +82,10 @@ while true; do
     )
     if [[ "$chosen_player" == "$label_all_active" ]]; then chosen_player="active"; fi
     if [[ "$chosen_player" == "$label_all_inactive" ]]; then chosen_player="inactive"; fi
+    if [[ "$chosen_player" == "$label_all" ]]; then chosen_player="all"; fi
     # second menu level loop
     while true; do
-        chosen_option="$(echo -e "$options" | rofi "${rofi_par2[@]}")" 
+        chosen_option="$(echo -e "$options" | rofi "${rofi_second_param[@]}")" 
         case $chosen_option in
             "$back")
                 break
@@ -113,6 +119,10 @@ while true; do
                 player_option="shuffle"
                 ;;
         esac
-        mpris-ctl --player "$chosen_player" "$player_option"
+        if [[ "$chosen_player" == "all" ]]; then
+            mpris-ctl --player active --player inactive "$player_option"
+        else
+            mpris-ctl --player "$chosen_player" "$player_option"
+        fi
     done
 done
