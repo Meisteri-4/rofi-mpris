@@ -1,4 +1,4 @@
-# A simple script for controlling MPRIS applications with rofi.
+# Control MPRIS applications with rofi.
 
 Requires `mpris-ctl` or `playerctl` and `rofi` to work.
 
