@@ -17,4 +17,6 @@ Usage: rofi-mpris [options] - Control MPRIS applications with rofi
                                               Defaults to the first theme
     -h, --help                                Show this text
 ```
+If no neither mpris controller is given as input, the script will use whichever controller is available with `mpris-ctl` having priority.
+
 Most things you may want to customize can be found inside the function `get_custom_opts()` defined right at the top of the script.
