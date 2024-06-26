@@ -1,8 +1,8 @@
-### A simple script for controlling MPRIS applications with rofi.
+# A simple script for controlling MPRIS applications with rofi.
 
 Requires `mpris-ctl` or `playerctl` and `rofi` to work.
 
-# Instructions
+## Instructions
 ```
 $ git clone https://github.com/Meisteri-4/rofi-mpris.git && cd rofi-mpris
 $ chmod +x ./rofi-mpris
