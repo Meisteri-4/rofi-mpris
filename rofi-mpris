@@ -1,42 +1,78 @@
 #!/usr/bin/env bash
-DEFAULT_THEME="$HOME/.config/rofi/config.rasi"
 MPRIS_CTL=0
 PLAYERCTL=1
+MPRIS_CONTROLLER=$MPRIS_CTL
+#MPRIS_CONTROLLER=$PLAYERCTL
+DEFAULT_THEME="$HOME/.config/rofi/config.rasi"
 
-# Edit $USED_MPRIS_CONTROLLER to choose between mpris-ctl and playerctl
-USED_MPRIS_CONTROLLER=$MPRIS_CTL
-#USED_MPRIS_CONTROLLER=$PLAYERCTL
-if [[ "$USED_MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
+HELP_STR="Usage: rofi-mpris [options] - Control MPRIS applications with rofi
+  options:
+    -m, --mpris-ctl                           Use mpris-ctl as MPRIS controller (DEFAULT)
+    -p, --playerctl                           Use playerctl as MPRIS controller
+    -f, --first-theme /path/to/theme.rasi     Set rofi theme for the first level menu
+                                              Defaults to \$HOME/.config/rofi/config.rasi
+    -s, --second-theme /path/to/theme.rasi    Set rofi theme for the second level menu
+                                              Defaults to the first theme
+    -h, --help                                Show this text"
+# Parse args
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -f|--first-theme)
+            FIRST_THEME="$2" # Used also for second if second is not given
+            shift # past argument
+            shift # past value
+            ;;
+        -s|--second-theme)
+            SECOND_THEME="$2"
+            shift # past argument
+            shift # past value
+            ;;
+        -p|--playerctl)
+            MPRIS_CONTROLLER=$PLAYERCTL
+            shift # past argument
+            ;;
+        -m|--mpris-ctl)
+            MPRIS_CONTROLLER=$MPRIS_CTL
+            shift # past argument
+            ;;
+        -h|--help)
+            echo -e "$HELP_STR"
+            exit 0
+            ;;
+        *)
+            echo -e "$HELP_STR"
+            echo "Unknown option \"$1\""
+            exit 1
+            ;;
+    esac
+done
+if [[ -z $FIRST_THEME ]]; then
+    FIRST_THEME="$DEFAULT_THEME"
+fi
+if [[ -z $SECOND_THEME ]]; then
+    SECOND_THEME="$FIRST_THEME"
+fi
+
+if [[ "$MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
     if ! hash mpris-ctl 2>/dev/null; then
         if ! hash playerctl 2>/dev/null; then
             >&2 echo "No mpris-ctl or playerctl in \$PATH. Exiting."
             exit 1
         else
-            USED_MPRIS_CONTROLLER=$PLAYERCTL
+            MPRIS_CONTROLLER=$PLAYERCTL
             echo "mpris-ctl does not exits in \$PATH. Using playerctl instead."
         fi
     fi
-elif [[ "$USED_MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
-    if ! hash playerctdl 2>/dev/null; then
+elif [[ "$MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
+    if ! hash playerctl 2>/dev/null; then
         if ! hash mpris-ctl 2>/dev/null; then
             >&2 echo "No mpris-ctl or playerctl in \$PATH. Exiting."
             exit 1
         else
-            USED_MPRIS_CONTROLLER=$MPRIS_CTL
+            MPRIS_CONTROLLER=$MPRIS_CTL
             echo "playerctl does not exits in \$PATH. Using mpris-ctl instead."
         fi
     fi
-fi
-
-if [[ -z $1 ]]; then
-    FIRST_THEME="$DEFAULT_THEME"
-    SECOND_THEME="$DEFAULT_THEME"
-elif [[ -z $2 ]]; then
-    FIRST_THEME="$1"
-    SECOND_THEME="$1"
-else
-    FIRST_THEME="$1"
-    SECOND_THEME="$2"
 fi
 
 # setting up symbols used in the menu. you`re encouraged to change them
@@ -57,7 +93,7 @@ declare -A labels=(
 )
 
 # setting up options shown in the second level menu. again, you are encouraged to change them
-# can include play pause play-pause stop next prev loop shuffle in any order
+# can include "play" "pause" "play-pause" "stop" "next" "prev" "loop" "shuffle" in any order
 options=(
       "stop"
       "prev"
@@ -66,7 +102,7 @@ options=(
       "loop"
 )
 
-if [[ "$USED_MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
+if [[ "$MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
     declare -A commands=(
         ["play"]="play"
         ["pause"]="pause"
@@ -105,7 +141,7 @@ if [[ "$USED_MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
         player_info="$status $(mpris-ctl --player "$player" info "%player_name\t%artist_name - %track_name")"
         echo "$player_info"
     }
-elif [[ "$USED_MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
+elif [[ "$MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
     declare -A commands=(
         ["play"]="play"
         ["pause"]="pause"
@@ -209,9 +245,7 @@ while true; do
     fi
     # second menu level loop
     while true; do
-        set -x
         option_index="$(echo "$option_display"| rofi "${rofi_second_params[@]}")"
-        set +x
         if [[ -z $option_index ]]; then
             break
         fi
