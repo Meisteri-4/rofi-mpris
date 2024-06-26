@@ -1,6 +1,33 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
 DEFAULT_THEME="$HOME/.config/rofi/config.rasi"
+MPRIS_CTL=0
+PLAYERCTL=1
+
+# Edit $USED_MPRIS_CONTROLLER to choose between mpris-ctl and playerctl
+USED_MPRIS_CONTROLLER=$MPRIS_CTL
+#USED_MPRIS_CONTROLLER=$PLAYERCTL
+if [[ "$USED_MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
+    if ! hash mpris-ctl 2>/dev/null; then
+        if ! hash playerctl 2>/dev/null; then
+            >&2 echo "No mpris-ctl or playerctl in \$PATH. Exiting."
+            exit 1
+        else
+            USED_MPRIS_CONTROLLER=$PLAYERCTL
+            echo "mpris-ctl does not exits in \$PATH. Using playerctl instead."
+        fi
+    fi
+elif [[ "$USED_MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
+    if ! hash playerctdl 2>/dev/null; then
+        if ! hash mpris-ctl 2>/dev/null; then
+            >&2 echo "No mpris-ctl or playerctl in \$PATH. Exiting."
+            exit 1
+        else
+            USED_MPRIS_CONTROLLER=$MPRIS_CTL
+            echo "playerctl does not exits in \$PATH. Using mpris-ctl instead."
+        fi
+    fi
+fi
+
 if [[ -z $1 ]]; then
     FIRST_THEME="$DEFAULT_THEME"
     SECOND_THEME="$DEFAULT_THEME"
@@ -39,72 +66,132 @@ options=(
       "loop"
 )
 
-# setting up commands passed to mpris-ctl. can be changed to commands listed in mpris-ctl -h
-declare -A commands=(
-    ["play"]="play"
-    ["pause"]="pause"
-    ["play_pause"]="pp"
-    ["stop"]="stop"
-    ["next"]="next"
-    ["prev"]="prev"
-    ["loop"]="repeat --track"
-    ["shuffle"]="shuffle"
-    ["target_all_players"]="--player active --player inactive"
-    ["target_all_active_players"]="--player active"
-    ["target_all_inactive_players"]="--player inactive"
-)
+if [[ "$USED_MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
+    declare -A commands=(
+        ["play"]="play"
+        ["pause"]="pause"
+        ["play_pause"]="pp"
+        ["stop"]="stop"
+        ["next"]="next"
+        ["prev"]="prev"
+        ["loop"]="repeat --track"
+        ["shuffle"]="shuffle"
+        ["target_all_players"]="--player active --player inactive"
+        ["target_all_active_players"]="--player active"
+        ["target_all_inactive_players"]="--player inactive"
+        ["target_single_player"]="--player"
+    )
+    execute_option() {
+        local targeting_command="$1"
+        local option_command="$2"
+        eval "mpris-ctl $targeting_command $option_command"
+    }
+    get_players() {
+        mpris-ctl ${commands["target_all_players"]} list
+        # mris-ctl exits with 1 if no players are found
+        if [[ $? == 1 ]]; then
+            rofi -e "No MPRIS players running."
+            exit 1
+        fi
+    }
+    get_player_info() {
+        local player="$1" 
+        local player_info
+        if [[ "$(mpris-ctl --player "$player" status)" == "Playing" ]]; then
+            local status="${labels["active"]}"
+        else
+            local status="${labels["inactive"]}"
+        fi
+        player_info="$status $(mpris-ctl --player "$player" info "%player_name\t%artist_name - %track_name")"
+        echo "$player_info"
+    }
+elif [[ "$USED_MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
+    declare -A commands=(
+        ["play"]="play"
+        ["pause"]="pause"
+        ["play_pause"]="play-pause"
+        ["stop"]="stop"
+        ["next"]="next"
+        ["prev"]="previous"
+        ["loop"]="loop --track"
+        ["shuffle"]="shuffle Toggle"
+        ["target_all_players"]="-a"
+        ["target_all_active_players"]="" # not that simple in playerctl
+        ["target_all_inactive_players"]=""
+        ["target_single_player"]="-p"
+    )
+    execute_option() {
+        local targeting_command="$1"
+        local option_command="$2"
+        eval "playerctl $targeting_command $option_command"
+    }
+    get_players() {
+        local players
+        players="$(playerctl -l 2>/dev/null)"
+        if [[ -z $players ]]; then
+            rofi -e "No MPRIS players running."
+            exit 1
+        fi
+        echo -e "$players"
+    }
+    get_player_info() {
+        local player="$1" 
+        local player_info
+        if [[ "$(playerctl -p "$player" status)" == "Playing" ]]; then
+            local status="${labels["active"]}"
+        else
+            local status="${labels["inactive"]}"
+        fi
+        player_info="$status $(playerctl -p "$player" metadata --format "{{playerName}}\t{{artist}} - {{title}}")"
+        echo -e "$player_info"
+    }
+else
+    # should never happen
+    exit 1
+fi
 
 special_targets=(
     "target_all_players"
-    #"target_all_active_players"
-    #"target_all_inactive_players"
+    #"target_all_active_players" # mpris-ctl exclusive
+    #"target_all_inactive_players" # mpris-ctl exclusive
 )
 
 rofi_first_params=(
+    -window-title "rofi-mpris"
     -dmenu
     -p ""
     -format i
     -theme "$FIRST_THEME"
 )
+
 rofi_second_params=(
+    -window-title "rofi-mpris"
+    -dmenu
     -no-fixed-num-lines
     -selected-row 2 # <- row selected by default. useful
-    -dmenu
-    -p "$target_label"
+    -p ""
     -format i
     -theme "$SECOND_THEME"
 )
-declare -a option_display_array
+declare -a option_display_array # used for displaying actions in second level menu
 for option in "${options[@]}"; do
     option_display_array+=("${labels["$option"]}")
 done
-# making the options display an array that then gets converted to a string
-# makes it a bit easier to work with if someone wants to extend this script
 option_display="$(printf "%s\n" "${option_display_array[@]}")"
 
 # first menu level loop
 while true; do
-    playerstring="$(mpris-ctl ${commands["target_all_players"]} list)"
-    # mris-ctl exits with 1 if no players are found
-    if [[ $? == 1 ]]; then
-        rofi -e "No MPRIS players running."
-        exit 1
-    fi
-    readarray -t players <<<"$playerstring"
-    declare -a target_display=( ) # <- this gets passed to rofi after we build it
+    readarray -t players <<<"$(get_players)"
+    declare -a target_display=( ) 
+    # ^ this holds all target labels and player information
+    # the array gets converted to a string before being passed to rofi
+    # we add special targets (all, active, inactive) separate from actual players
     for target in "${special_targets[@]}"; do
         target_display+=("${labels["$target"]}")
     done
     for player in "${players[@]}"; do
-        if [[ "$(mpris-ctl --player "$player" status)" == "Playing" ]]; then
-            status="${labels["active"]}"
-        else
-            status="${labels["inactive"]}"
-        fi
-        player_info="$(mpris-ctl --player "$player" info "%player_name\t%artist_name - %track_name")"
-        target_display+=("$status $player_info")
+        target_display+=("$(get_player_info "$player")")
     done
-
     target_index="$(printf "%s\n" "${target_display[@]}" | rofi "${rofi_first_params[@]}")"
     if [[ -z $target_index ]]; then
         # $player_index is empty if rofi gets passed ESC
@@ -117,15 +204,18 @@ while true; do
     else
         #otherwise we shift by the length of special targets and index players
         target_index=$((target_index - ${#special_targets[@]}))
-        targeting_command="--player \"${players[$target_index]}\""
+        target_label="${players[$target_index]}"
+        targeting_command="${commands["target_single_player"]} \"$target_label\""
     fi
     # second menu level loop
     while true; do
+        set -x
         option_index="$(echo "$option_display"| rofi "${rofi_second_params[@]}")"
+        set +x
         if [[ -z $option_index ]]; then
             break
         fi
         option_command="${commands[${options[$option_index]}]}"
-        eval "mpris-ctl $targeting_command $option_command" # scary!
+        execute_option "$targeting_command" "$option_command"
     done
 done
