@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 MPRIS_CTL=0
 PLAYERCTL=1
-MPRIS_CONTROLLER=$MPRIS_CTL
-#MPRIS_CONTROLLER=$PLAYERCTL
 DEFAULT_THEME="$HOME/.config/rofi/config.rasi"
 
 HELP_STR="Usage: rofi-mpris [options] - Control MPRIS applications with rofi
@@ -14,96 +12,189 @@ HELP_STR="Usage: rofi-mpris [options] - Control MPRIS applications with rofi
     -s, --second-theme /path/to/theme.rasi    Set rofi theme for the second level menu
                                               Defaults to the first theme
     -h, --help                                Show this text"
-# Parse args
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -f|--first-theme)
-            FIRST_THEME="$2" # Used also for second if second is not given
-            shift # past argument
-            shift # past value
-            ;;
-        -s|--second-theme)
-            SECOND_THEME="$2"
-            shift # past argument
-            shift # past value
-            ;;
-        -p|--playerctl)
-            MPRIS_CONTROLLER=$PLAYERCTL
-            shift # past argument
-            ;;
-        -m|--mpris-ctl)
-            MPRIS_CONTROLLER=$MPRIS_CTL
-            shift # past argument
-            ;;
-        -h|--help)
-            echo -e "$HELP_STR"
-            exit 0
-            ;;
-        *)
-            echo -e "$HELP_STR"
-            echo "Unknown option \"$1\""
-            exit 1
-            ;;
-    esac
-done
-if [[ -z $FIRST_THEME ]]; then
-    FIRST_THEME="$DEFAULT_THEME"
-fi
-if [[ -z $SECOND_THEME ]]; then
-    SECOND_THEME="$FIRST_THEME"
-fi
 
-if [[ "$MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
-    if ! hash mpris-ctl 2>/dev/null; then
-        if ! hash playerctl 2>/dev/null; then
-            >&2 echo "No mpris-ctl or playerctl in \$PATH. Exiting."
-            exit 1
+get_custom_opts() {
+    # setting up symbols used in the menu. 
+    # these are defined here to be easily changed.
+    declare -Ag labels=(
+        ["play"]="󰐊"
+        ["pause"]="󰏤"
+        ["play_pause"]="󰐎"
+        ["stop"]="󰓛"
+        ["next"]="󰒭"
+        ["prev"]="󰒮"
+        ["loop"]="󰑖"
+        ["shuffle"]="󰒝"
+        ["active"]="󰝚"
+        ["inactive"]="󰝛"
+        ["target_all_players"]="All"
+        ["target_all_active_players"]="Active"
+        ["target_all_inactive_players"]="Inactive"
+    )
+
+    # can include "play" "pause" "play-pause" "stop" "next" "prev" "loop" "shuffle" in any order
+    options=(
+        "stop"
+        "prev"
+        "play_pause"
+        "next"
+        "loop"
+    )
+    special_targets=(
+        "target_all_players"
+        #"target_all_active_players" # mpris-ctl exclusive
+        #"target_all_inactive_players" # mpris-ctl exclusive
+    )
+    
+    # used in first level menu
+    rofi_first_params=(
+        -window-title "rofi-mpris"
+        -dmenu # dont change
+        -p ""
+        -format i # dont change
+        -theme "$FIRST_THEME"
+    )
+    
+    # used in second level menu
+    rofi_second_params=(
+        -window-title "rofi-mpris"
+        -dmenu # dont change
+        -no-fixed-num-lines
+        -selected-row 2 # <- row selected by default. useful
+        -p ""
+        -format i # dont change
+        -theme "$SECOND_THEME"
+    )
+
+    # used for displaying actions in second level menu
+    declare -a option_display_array
+    for option in "${options[@]}"; do
+        option_display_array+=("${labels["$option"]}")
+    done
+    option_display="$(printf "%s\n" "${option_display_array[@]}")"
+}
+
+main() {
+    parse_args "$@"
+    get_custom_opts
+    while true; do
+        readarray -t players <<<"$(get_players)"
+        declare -a target_display=( ) 
+        # ^ this holds all target labels and player information
+        # the array gets converted to a string before being passed to rofi
+        # we add special targets (all, active, inactive) separate from actual players
+        for target in "${special_targets[@]}"; do
+            target_display+=("${labels["$target"]}")
+        done
+        for player in "${players[@]}"; do
+            target_display+=("$(get_player_info "$player")")
+        done
+        target_index="$(printf "%s\n" "${target_display[@]}" | rofi "${rofi_first_params[@]}")"
+        [[ -z $target_index ]] && break
+        # $target_index is empty if rofi gets passed ESC
+        if [[ -n "${special_targets[$target_index]}" ]]; then
+            # if index points to special target, use that
+            target_label="${labels[${special_targets[$target_index]}]}"
+            targeting_command="${commands[${special_targets[$target_index]}]}"
         else
+            # otherwise we have to shift by the length of special targets 
+            target_index=$((target_index - ${#special_targets[@]}))
+            target_label="${players[$target_index]}"
+            targeting_command="${commands["target_single_player"]} \"$target_label\""
+        fi
+        # second menu level loop
+        while true; do
+            option_index="$(echo "$option_display"| rofi "${rofi_second_params[@]}")"
+            [[ -z $option_index ]] && break
+            option_command="${commands[${options[$option_index]}]}"
+            execute_option "$targeting_command" "$option_command"
+        done
+    done
+}
+
+parse_args() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -f|--first-theme)
+                FIRST_THEME="$2" # Used also for second if second is not given
+                shift # past argument
+                shift # past value
+                ;;
+            -s|--second-theme)
+                SECOND_THEME="$2"
+                shift # past argument
+                shift # past value
+                ;;
+            -p|--playerctl)
+                MPRIS_CONTROLLER=$PLAYERCTL
+                shift # past argument
+                ;;
+            -m|--mpris-ctl)
+                MPRIS_CONTROLLER=$MPRIS_CTL
+                shift # past argument
+                ;;
+            -h|--help)
+                echo -e "$HELP_STR"
+                exit 0
+                ;;
+            *)
+                echo -e "$HELP_STR"
+                echo "Unknown option \"$1\""
+                exit 1
+                ;;
+        esac
+    done
+
+    [[ -z $FIRST_THEME ]] && FIRST_THEME="$DEFAULT_THEME"
+    [[ -z $SECOND_THEME ]] && SECOND_THEME="$FIRST_THEME"
+
+    # |  this whole thing is just to make sure that the user isnt
+    # V  trying to use a controller that doesnt exist
+    if [[ -z $MPRIS_CONTROLLER ]]; then
+        if hash mpris-ctl 2>/dev/null; then
+            MPRIS_CONTROLLER=$MPRIS_CTL
+        elif hash playerctl 2>/dev/null; then
             MPRIS_CONTROLLER=$PLAYERCTL
-            echo "mpris-ctl does not exits in \$PATH. Using playerctl instead."
+        else
+            echo "No mpris-ctl or playerctl in \$PATH."
+            echo -e "$HELP_STR"
+            exit 1
+        fi
+    else
+        if [[ "$MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
+            if ! hash mpris-ctl 2>/dev/null; then 
+                echo "No mpris-ctl in \$PATH."
+                echo -e "$HELP_STR"
+                exit 1
+            fi
+        elif [[ "$MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
+            if ! hash playerctl 2>/dev/null; then
+                echo "No playerctl in \$PATH." 
+                echo -e "$HELP_STR"
+                exit 1
+            fi
+        else
+            # should never happen
+            exit 1
         fi
     fi
-elif [[ "$MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
-    if ! hash playerctl 2>/dev/null; then
-        if ! hash mpris-ctl 2>/dev/null; then
-            >&2 echo "No mpris-ctl or playerctl in \$PATH. Exiting."
-            exit 1
-        else
-            MPRIS_CONTROLLER=$MPRIS_CTL
-            echo "playerctl does not exits in \$PATH. Using mpris-ctl instead."
-        fi
+    if [[ "$MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
+        get_opts_mpris_ctl
+    elif [[ "$MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
+        get_opts_playerctl
+    else
+        # should never happen
+        exit 1
     fi
-fi
+}
 
-# setting up symbols used in the menu. you`re encouraged to change them
-declare -A labels=(
-    ["play"]="󰐊"
-    ["pause"]="󰏤"
-    ["play_pause"]="󰐎"
-    ["stop"]="󰓛"
-    ["next"]="󰒭"
-    ["prev"]="󰒮"
-    ["loop"]="󰑖"
-    ["shuffle"]="󰒝"
-    ["active"]="󰝚"
-    ["inactive"]="󰝛"
-    ["target_all_players"]="All"
-    ["target_all_active_players"]="Active"
-    ["target_all_inactive_players"]="Inactive"
-)
-
-# setting up options shown in the second level menu. again, you are encouraged to change them
-# can include "play" "pause" "play-pause" "stop" "next" "prev" "loop" "shuffle" in any order
-options=(
-      "stop"
-      "prev"
-      "play_pause"
-      "next"
-      "loop"
-)
-
-if [[ "$MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
-    declare -A commands=(
+#
+# mpris-ctl version 
+#
+get_opts_mpris_ctl() {
+    # note: declare makes associative arrays local if no -g flag is passed
+    # that was not fun to debug
+    declare -Ag commands=(
         ["play"]="play"
         ["pause"]="pause"
         ["play_pause"]="pp"
@@ -141,8 +232,13 @@ if [[ "$MPRIS_CONTROLLER" == "$MPRIS_CTL" ]]; then
         player_info="$status $(mpris-ctl --player "$player" info "%player_name\t%artist_name - %track_name")"
         echo "$player_info"
     }
-elif [[ "$MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
-    declare -A commands=(
+}
+
+#
+# playerctl version
+#
+get_opts_playerctl() {
+    declare -Ag commands=(
         ["play"]="play"
         ["pause"]="pause"
         ["play_pause"]="play-pause"
@@ -181,75 +277,6 @@ elif [[ "$MPRIS_CONTROLLER" == "$PLAYERCTL" ]]; then
         player_info="$status $(playerctl -p "$player" metadata --format "{{playerName}}\t{{artist}} - {{title}}")"
         echo -e "$player_info"
     }
-else
-    # should never happen
-    exit 1
-fi
+}
 
-special_targets=(
-    "target_all_players"
-    #"target_all_active_players" # mpris-ctl exclusive
-    #"target_all_inactive_players" # mpris-ctl exclusive
-)
-
-rofi_first_params=(
-    -window-title "rofi-mpris"
-    -dmenu
-    -p ""
-    -format i
-    -theme "$FIRST_THEME"
-)
-
-rofi_second_params=(
-    -window-title "rofi-mpris"
-    -dmenu
-    -no-fixed-num-lines
-    -selected-row 2 # <- row selected by default. useful
-    -p ""
-    -format i
-    -theme "$SECOND_THEME"
-)
-declare -a option_display_array # used for displaying actions in second level menu
-for option in "${options[@]}"; do
-    option_display_array+=("${labels["$option"]}")
-done
-option_display="$(printf "%s\n" "${option_display_array[@]}")"
-
-# first menu level loop
-while true; do
-    readarray -t players <<<"$(get_players)"
-    declare -a target_display=( ) 
-    # ^ this holds all target labels and player information
-    # the array gets converted to a string before being passed to rofi
-    # we add special targets (all, active, inactive) separate from actual players
-    for target in "${special_targets[@]}"; do
-        target_display+=("${labels["$target"]}")
-    done
-    for player in "${players[@]}"; do
-        target_display+=("$(get_player_info "$player")")
-    done
-    target_index="$(printf "%s\n" "${target_display[@]}" | rofi "${rofi_first_params[@]}")"
-    if [[ -z $target_index ]]; then
-        # $player_index is empty if rofi gets passed ESC
-        break
-    fi
-    if [[ -n "${special_targets[$target_index]}" ]]; then
-        # if index points to special target, use that
-        target_label="${labels[${special_targets[$target_index]}]}"
-        targeting_command="${commands[${special_targets[$target_index]}]}"
-    else
-        #otherwise we shift by the length of special targets and index players
-        target_index=$((target_index - ${#special_targets[@]}))
-        target_label="${players[$target_index]}"
-        targeting_command="${commands["target_single_player"]} \"$target_label\""
-    fi
-    # second menu level loop
-    while true; do
-        option_index="$(echo "$option_display"| rofi "${rofi_second_params[@]}")"
-        if [[ -z $option_index ]]; then
-            break
-        fi
-        option_command="${commands[${options[$option_index]}]}"
-        execute_option "$targeting_command" "$option_command"
-    done
-done
+main "$@"
